@@ -143,7 +143,8 @@ void WindowCallbacks::onMouseButton(double x, double y, int btn, MouseButtonActi
         if(btn < 1)
             return;
 #ifdef USE_IMGUI
-        if(ImGui::GetCurrentContext()) {
+        if(ImGui::GetCurrentContext() && btn >= 1 && btn <= 3) {
+            // High Mouse Buttons let this code crash
             ImGuiIO& io = ImGui::GetIO();
             io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
             io.AddMouseButtonEvent(btn - 1, action != MouseButtonAction::RELEASE);
