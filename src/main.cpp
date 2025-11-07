@@ -48,6 +48,7 @@
 #include <daemon_utils/auto_shutdown_service.h>
 #include "settings.h"
 #include "imgui_ui.h"
+#include <mcpelauncher/apkinfo.h>
 
 struct RpcCallbackServer : daemon_utils::auto_shutdown_service {
     RpcCallbackServer(const std::string& path, JniSupport& support) : daemon_utils::auto_shutdown_service(path, daemon_utils::shutdown_policy::never) {
@@ -201,6 +202,23 @@ int main(int argc, char* argv[]) {
 #endif
     Log::info("Launcher", "OS: %s", TARGET);
     Log::info("Launcher", "Arch: %s", ARCH);
+
+    std::ifstream manifestFileStream(PathHelper::getGameDir() + "AndroidManifest.xml", std::ios::binary);
+    manifestFileStream.is_open();
+    std::stringstream manifest;
+    manifest << manifestFileStream.rdbuf();
+    auto smanifest = manifest.str();
+
+    axml::AXMLFile manifestFile (smanifest.data(), smanifest.size());
+    axml::AXMLParser manifestParser (manifestFile);
+    ApkInfo apkInfo = ApkInfo::fromXml(manifestParser);
+
+    Log::info("Launcher", "Minecraft Package: %s", apkInfo.package.c_str());
+    Log::info("Launcher", "Minecraft Version Code: %d", apkInfo.versionCode);
+
+    MinecraftVersion::init(apkInfo.package, apkInfo.versionCode);
+    Log::info("Launcher", "Game version: %s", MinecraftVersion::getString().c_str());
+
     loadGameOptions();
 #if defined(__i386__) || defined(__x86_64__)
     {
@@ -484,8 +502,6 @@ Hardware	: Qualcomm Technologies, Inc MSM8998
             modLoader.loadModsFromDirectory(d);
         }
     }
-
-    Log::info("Launcher", "Game version: %s", MinecraftVersion::getString().c_str());
 
     Log::info("Launcher", "Applying patches");
     if(v8Flags.get().size()) {
