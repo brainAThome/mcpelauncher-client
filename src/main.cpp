@@ -204,19 +204,20 @@ int main(int argc, char* argv[]) {
     Log::info("Launcher", "Arch: %s", ARCH);
 
     std::ifstream manifestFileStream(PathHelper::getGameDir() + "AndroidManifest.xml", std::ios::binary);
-    manifestFileStream.is_open();
-    std::stringstream manifest;
-    manifest << manifestFileStream.rdbuf();
-    auto smanifest = manifest.str();
+    if(manifestFileStream.is_open()) {
+        std::stringstream manifest;
+        manifest << manifestFileStream.rdbuf();
+        auto smanifest = manifest.str();
 
-    axml::AXMLFile manifestFile (smanifest.data(), smanifest.size());
-    axml::AXMLParser manifestParser (manifestFile);
-    ApkInfo apkInfo = ApkInfo::fromXml(manifestParser);
+        axml::AXMLFile manifestFile (smanifest.data(), smanifest.size());
+        axml::AXMLParser manifestParser (manifestFile);
+        ApkInfo apkInfo = ApkInfo::fromXml(manifestParser);
 
-    Log::info("Launcher", "Minecraft Package: %s", apkInfo.package.c_str());
-    Log::info("Launcher", "Minecraft Version Code: %d", apkInfo.versionCode);
+        Log::info("Launcher", "Minecraft Package: %s", apkInfo.package.c_str());
+        Log::info("Launcher", "Minecraft Version Code: %d", apkInfo.versionCode);
 
-    MinecraftVersion::init(apkInfo.package, apkInfo.versionCode);
+        MinecraftVersion::init(apkInfo.package, apkInfo.versionCode);
+    }
     Log::info("Launcher", "Game version: %s", MinecraftVersion::getString().c_str());
 
     loadGameOptions();
