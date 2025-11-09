@@ -182,6 +182,10 @@ public:
     FakeJni::JBoolean hasWriteExternalStoragePermission() {
         return true;
     }
+    
+    FakeJni::JBoolean hasReadMediaImagesPermission() {
+        return true;
+    }
 
     std::shared_ptr<HardwareInfo> getHardwareInfo() {
         return std::make_shared<HardwareInfo>();
