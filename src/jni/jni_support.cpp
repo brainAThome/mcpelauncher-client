@@ -120,6 +120,8 @@ void JniSupport::registerJniClasses() {
     vm.registerClass<FMOD>();
     vm.registerClass<AssetManager>();
 
+    vm.registerClass<EventTracerHelperMultiplayer>();
+
 #if defined(HAVE_PULSEAUDIO) || defined(HAVE_SDL3AUDIO)
     vm.registerClass<AudioDevice>();
 #endif
@@ -127,7 +129,7 @@ void JniSupport::registerJniClasses() {
 }
 
 void JniSupport::registerMinecraftNatives(void* (*symResolver)(const char*)) {
-    registerNatives(MainActivity::getDescriptor(), {{"nativeRegisterThis", "()V"}, {"nativeWaitCrashManagementSetupComplete", "()V"}, {"nativeInitializeWithApplicationContext", "(Landroid/content/Context;)V"}, {"nativeShutdown", "()V"}, {"nativeUnregisterThis", "()V"}, {"nativeStopThis", "()V"}, {"nativeOnDestroy", "()V"}, {"nativeResize", "(II)V"}, {"nativeSetTextboxText", "(Ljava/lang/String;)V"}, {"nativeCaretPosition", "(I)V"}, {"nativeBackPressed", "()V"}, {"nativeReturnKeyPressed", "()V"}, {"nativeOnPickImageSuccess", "(JLjava/lang/String;)V"}, {"nativeOnPickImageCanceled", "(J)V"}, {"nativeOnPickFileSuccess", "(Ljava/lang/String;)V"}, {"nativeOnPickFileCanceled", "()V"}, {"nativeInitializeXboxLive", "(JJ)V"}, {"nativeinitializeLibHttpClient", "(J)J"}, {"nativeInitializeLibHttpClient", "(J)J"}, {"nativeProcessIntentUriQuery", "(Ljava/lang/String;Ljava/lang/String;)V"}, {"nativeSetIntegrityToken", "(Ljava/lang/String;)V"}, {"nativeRunNativeCallbackOnUiThread", "(J)V"}}, symResolver);
+    registerNatives(MainActivity::getDescriptor(), {{"nativeRegisterThis", "()V"}, {"nativeWaitCrashManagementSetupComplete", "()V"}, {"nativeInitializeWithApplicationContext", "(Landroid/content/Context;)V"}, {"nativeShutdown", "()V"}, {"nativeUnregisterThis", "()V"}, {"nativeStopThis", "()V"}, {"nativeOnDestroy", "()V"}, {"nativeResize", "(II)V"}, {"nativeSetTextboxText", "(Ljava/lang/String;II)V"}, {"nativeCaretPosition", "(I)V"}, {"nativeBackPressed", "()V"}, {"nativeReturnKeyPressed", "()V"}, {"nativeOnPickImageSuccess", "(JLjava/lang/String;)V"}, {"nativeOnPickImageCanceled", "(J)V"}, {"nativeOnPickFileSuccess", "(Ljava/lang/String;)V"}, {"nativeOnPickFileCanceled", "()V"}, {"nativeInitializeXboxLive", "(JJ)V"}, {"nativeinitializeLibHttpClient", "(J)J"}, {"nativeInitializeLibHttpClient", "(J)J"}, {"nativeProcessIntentUriQuery", "(Ljava/lang/String;Ljava/lang/String;)V"}, {"nativeSetIntegrityToken", "(Ljava/lang/String;)V"}, {"nativeRunNativeCallbackOnUiThread", "(J)V"}}, symResolver);
     registerNatives(NetworkMonitor::getDescriptor(), {{"nativeUpdateNetworkStatus", "(ZZZ)V"}}, symResolver);
     registerNatives(NativeStoreListener::getDescriptor(), {
                                                               {"onStoreInitialized", "(JZ)V"},
@@ -466,10 +468,10 @@ void JniSupport::onWindowResized(int newWidth, int newHeight) {
 void JniSupport::onSetTextboxText(std::string const& text) {
     if(!Settings::enable_keyboard_autofocus_patches_1_20_60 || getTextInputHandler().isEnabled()) {
         FakeJni::LocalFrame frame(vm);
-        auto setText = activity->getClass().getMethod("(Ljava/lang/String;)V", "nativeSetTextboxText");
+        auto setText = activity->getClass().getMethod("(Ljava/lang/String;II)V", "nativeSetTextboxText");
         if(setText) {
             auto str = std::make_shared<FakeJni::JString>(text);
-            setText->invoke(frame.getJniEnv(), activity.get(), frame.getJniEnv().createLocalReference(str));
+            setText->invoke(frame.getJniEnv(), activity.get(), frame.getJniEnv().createLocalReference(str), getTextInputHandler().getCursorPosition(), getTextInputHandler().getCursorPosition());
         }
     }
     auto pos = getTextInputHandler().getCursorPosition();
@@ -484,9 +486,15 @@ void JniSupport::setLastChar(FakeJni::JInt sym) {
 
 void JniSupport::onCaretPosition(int pos) {
     auto method = activity->getClass().getMethod("(I)V", "nativeCaretPosition");
+    FakeJni::LocalFrame frame;
     if(method) {
-        FakeJni::LocalFrame frame;
         method->invoke(frame.getJniEnv(), activity.get(), pos);
+    } else {
+        auto setText = activity->getClass().getMethod("(Ljava/lang/String;II)V", "nativeSetTextboxText");
+        if(setText) {
+            auto str = std::make_shared<FakeJni::JString>(getTextInputHandler().getText());
+            setText->invoke(frame.getJniEnv(), activity.get(), frame.getJniEnv().createLocalReference(str), pos, pos);
+        }
     }
 }
 

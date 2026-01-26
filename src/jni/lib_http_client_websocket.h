@@ -8,6 +8,7 @@
 
 class HttpClientWebSocket : public FakeJni::JObject {
     FakeJni::JLong owner = 0;
+
 public:
     DEFINE_CLASS_NAME("com/xbox/httpclient/HttpClientWebSocket")
     HttpClientWebSocket(FakeJni::JLong owner);
@@ -17,14 +18,13 @@ public:
     FakeJni::JBoolean sendMessage(std::shared_ptr<FakeJni::JString>);
     FakeJni::JBoolean sendBinaryMessage(std::shared_ptr<jnivm::ByteBuffer>);
     void disconnect(int id);
-    
+
 private:
-    void *curl;
-    void *jvm;
+    void* curl;
+    std::mutex curlMu;
+    void* jvm;
     bool connected = false;
-    struct curl_slist *header = nullptr;
-    size_t write_callback(char *ptr, size_t size, size_t nmemb);
-    static size_t writecb(char *buffer, size_t size, size_t nitems, void* data);
+    struct curl_slist* header = nullptr;
     void sendOpened();
     void sendClosed();
 };
