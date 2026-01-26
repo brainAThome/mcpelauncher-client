@@ -54,13 +54,7 @@ public:
 
     int getCursorPosition() const { return currentTextPositionUTF; }
 
-    int getSelectStart() {
-        return std::min(currentTextPositionUTF, currentTextCopyPositionUTF);
-    }
-
-    int getSelectEnd() {
-        return std::max(currentTextPositionUTF, currentTextCopyPositionUTF);
-    }
+    int getCopyPosition() const { return currentTextCopyPositionUTF; }
 
     void setCursorPosition(int pos);
 

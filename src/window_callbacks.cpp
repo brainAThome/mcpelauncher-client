@@ -433,7 +433,7 @@ void WindowCallbacks::onKeyboard(KeyCode key, KeyAction action, int mods) {
         int modCTRL = mods & KEY_MOD_CTRL;
 #endif
 
-        if(modCTRL && key == KeyCode::C && jniSupport.getTextInputHandler().getCopyText() != "") {
+        if(modCTRL && action == KeyAction::PRESS && key == KeyCode::C && jniSupport.getTextInputHandler().getCopyText() != "") {
             window.setClipboardText(jniSupport.getTextInputHandler().getCopyText());
         } else {
             jniSupport.getTextInputHandler().onKeyPressed(key, action, mods);
