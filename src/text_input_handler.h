@@ -17,12 +17,14 @@ private:
     size_t currentTextPosition = 0;
     size_t currentTextPositionUTF = 0;
     size_t currentTextCopyPosition = 0;
+    size_t currentTextCopyPositionUTF = 0;
     TextCallback textUpdateCallback;
     CaretCallback caretPositionCallback;
     constexpr static char spaces[] = " -_#/\\!@$%^&*();:'\"?.,";
     size_t enabledNo = 0;
     std::string lastInput;
     bool keepOnce = false;
+    bool shiftPressed = false;
 
 public:
     TextInputHandler(TextCallback cb, CaretCallback caretCb) {
@@ -42,7 +44,7 @@ public:
 
     void disable();
 
-    void onTextInput(std::string const &val);
+    void onTextInput(std::string const& val);
 
     void onKeyPressed(KeyCode key, KeyAction action, int mods);
 
@@ -51,6 +53,14 @@ public:
     std::string getText() const { return currentText; };
 
     int getCursorPosition() const { return currentTextPositionUTF; }
+
+    int getSelectStart() {
+        return std::min(currentTextPositionUTF, currentTextCopyPositionUTF);
+    }
+
+    int getSelectEnd() {
+        return std::max(currentTextPositionUTF, currentTextCopyPositionUTF);
+    }
 
     void setCursorPosition(int pos);
 

@@ -471,7 +471,7 @@ void JniSupport::onSetTextboxText(std::string const& text) {
         auto setText = activity->getClass().getMethod("(Ljava/lang/String;II)V", "nativeSetTextboxText");
         if(setText) {
             auto str = std::make_shared<FakeJni::JString>(text);
-            setText->invoke(frame.getJniEnv(), activity.get(), frame.getJniEnv().createLocalReference(str), getTextInputHandler().getCursorPosition(), getTextInputHandler().getCursorPosition());
+            setText->invoke(frame.getJniEnv(), activity.get(), frame.getJniEnv().createLocalReference(str), getTextInputHandler().getSelectStart(), getTextInputHandler().getSelectEnd());
         }
     }
     auto pos = getTextInputHandler().getCursorPosition();
@@ -493,7 +493,7 @@ void JniSupport::onCaretPosition(int pos) {
         auto setText = activity->getClass().getMethod("(Ljava/lang/String;II)V", "nativeSetTextboxText");
         if(setText) {
             auto str = std::make_shared<FakeJni::JString>(getTextInputHandler().getText());
-            setText->invoke(frame.getJniEnv(), activity.get(), frame.getJniEnv().createLocalReference(str), pos, pos);
+            setText->invoke(frame.getJniEnv(), activity.get(), frame.getJniEnv().createLocalReference(str), getTextInputHandler().getSelectStart(), getTextInputHandler().getSelectEnd());
         }
     }
 }

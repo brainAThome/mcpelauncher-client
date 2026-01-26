@@ -23,6 +23,9 @@ public:
     }
 
     static size_t getBytePosFromUTF(const char* str, size_t len, size_t utflen) {
+        if(utflen == 0) {
+            return 0;
+        }
         size_t ret = 0;
         for(size_t i = 0; i < len;) {
             char c = str[i];

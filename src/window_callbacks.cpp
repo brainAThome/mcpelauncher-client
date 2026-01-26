@@ -142,7 +142,7 @@ void WindowCallbacks::onMouseButton(double x, double y, int btn, MouseButtonActi
             if(btn - 1 < 5) {
                 sharedInputState.mouseDown[btn - 1] = (action != MouseButtonAction::RELEASE);
             }
-            
+
             // Check if ImGui wants to capture this input
             if(sharedInputState.wantCaptureMouse.load() && !window.getCursorDisabled()) {
                 return;
@@ -196,7 +196,7 @@ void WindowCallbacks::onMousePosition(double x, double y) {
         // Update shared input state for ImGui
         sharedInputState.mousePosX = x;
         sharedInputState.mousePosY = y;
-        
+
         // Check if ImGui wants to capture this input
         if(sharedInputState.wantCaptureMouse.load() && !window.getCursorDisabled()) {
             return;
@@ -254,7 +254,7 @@ void WindowCallbacks::onMouseScroll(double x, double y, double dx, double dy) {
         sharedInputState.mouseWheelDX = dx;
         sharedInputState.mouseWheelDY = dy;
         sharedInputState.mouseWheelUpdated = true;
-        
+
         // Check if ImGui wants to capture this input
         if(sharedInputState.wantCaptureMouse.load() && !window.getCursorDisabled()) {
             return;
@@ -304,7 +304,7 @@ void WindowCallbacks::onTouchStart(int id, double x, double y) {
             sharedInputState.touchDown = true;
             sharedInputState.touchId = id;
             sharedInputState.touchUpdated = true;
-            
+
             if(sharedInputState.wantCaptureMouse.load()) {
                 return;
             }
@@ -419,7 +419,7 @@ void WindowCallbacks::onKeyboard(KeyCode key, KeyAction action, int mods) {
         if((int)key < 512) {
             sharedInputState.keyDown[(int)key] = (action != KeyAction::RELEASE);
         }
-        
+
         // Check if ImGui wants to capture this input
         if(sharedInputState.wantCaptureKeyboard.load() || sharedInputState.wantTextInput.load()) {
             return;
@@ -432,7 +432,6 @@ void WindowCallbacks::onKeyboard(KeyCode key, KeyAction action, int mods) {
 #else
         int modCTRL = mods & KEY_MOD_CTRL;
 #endif
-        modCTRL = (action != KeyAction::RELEASE);
 
         if(modCTRL && key == KeyCode::C && jniSupport.getTextInputHandler().getCopyText() != "") {
             window.setClipboardText(jniSupport.getTextInputHandler().getCopyText());
@@ -513,7 +512,7 @@ void WindowCallbacks::onKeyboardText(std::string const& c) {
         sharedInputState.textInputBuffer += c;
         sharedInputState.textInputUpdated = true;
     }
-    
+
     // Check if ImGui wants to capture this input
     if(sharedInputState.wantCaptureKeyboard.load()) {
         return;
