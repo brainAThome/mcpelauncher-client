@@ -8,6 +8,13 @@
 
 #if defined(CURLWS_TEXT) && defined(CURLWS_BINARY)
 #define ENABLE_WEBSOCKETS
+#if LIBCURL_VERSION_NUM >= 0x080200
+/* curl 8.2.0 and newer → const version */
+#define CURL_WS_META_CONST const
+#else
+/* curl 8.0.x and 8.1.x → non-const version */
+#define CURL_WS_META_CONST
+#endif
 #endif
 
 typedef struct {
@@ -69,7 +76,7 @@ void HttpClientWebSocket::connect(std::shared_ptr<FakeJni::JString> url, std::sh
             while(connected) {
                 char buf[512];
                 size_t n;
-                struct curl_ws_frame* meta;
+                CURL_WS_META_CONST struct curl_ws_frame* meta;
 
                 curlMu.lock();
                 CURLcode rc = curl_ws_recv(curl, buf, sizeof(buf), &n, &meta);
