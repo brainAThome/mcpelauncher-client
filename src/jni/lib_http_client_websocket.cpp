@@ -4,18 +4,49 @@
 #include <curl/curl.h>
 #include <thread>
 #include <unistd.h>
+#include <poll.h>
 
 #if defined(CURLWS_TEXT) && defined(CURLWS_BINARY)
 #define ENABLE_WEBSOCKETS
+#if LIBCURL_VERSION_NUM >= 0x080200
+/* curl 8.2.0 and newer → const version */
+#define CURL_WS_META_CONST const
+#else
+/* curl 8.0.x and 8.1.x → non-const version */
+#define CURL_WS_META_CONST
 #endif
+#endif
+
+typedef struct {
+    char* data;
+    size_t len;
+    size_t cap;
+} ws_msg;
+
+void ws_append(ws_msg* m, const void* src, size_t n) {
+    if(m->len + n > m->cap) {
+        size_t newcap = (m->len + n) * 2;
+        m->data = (char*)realloc(m->data, newcap);
+        m->cap = newcap;
+    }
+    memcpy(m->data + m->len, src, n);
+    m->len += n;
+}
+
+void poll_socket(curl_socket_t sock, int timeout_ms) {
+    struct pollfd pfd = {
+        .fd = sock,
+        .events = POLLIN | POLLERR | POLLHUP};
+
+    poll(&pfd, 1, timeout_ms);
+}
 
 HttpClientWebSocket::HttpClientWebSocket(FakeJni::JLong owner) {
     HttpClientWebSocket::owner = owner;
 
 #ifdef ENABLE_WEBSOCKETS
     curl = curl_easy_init();
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writecb);
+    curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);
 #endif
 
     jvm = (void*)&FakeJni::JniEnvContext().getJniEnv().getVM();
@@ -38,9 +69,71 @@ void HttpClientWebSocket::connect(std::shared_ptr<FakeJni::JString> url, std::sh
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header);
         auto ret = curl_easy_perform(curl);
         if(ret == CURLE_OK) {
+            sendOpened();
+
+            ws_msg msg = {0};
+
+            while(connected) {
+                char buf[512];
+                size_t n;
+                CURL_WS_META_CONST struct curl_ws_frame* meta;
+
+                curlMu.lock();
+                CURLcode rc = curl_ws_recv(curl, buf, sizeof(buf), &n, &meta);
+                curl_socket_t sock;
+                curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sock);
+                curlMu.unlock();
+
+                if(rc == CURLE_AGAIN) {
+                    poll_socket(sock, 100);  // sleep until readable
+                    continue;
+                }
+
+                if(rc != CURLE_OK) {
+                    break;
+                }
+
+                if(meta->flags & CURLWS_CLOSE) {
+                    break;
+                }
+
+                if(meta->flags & CURLWS_PING) {
+                    curlMu.lock();
+                    curl_ws_send(curl, buf, n, NULL, 0, CURLWS_PONG);
+                    curlMu.unlock();
+                    continue;
+                }
+
+                ws_append(&msg, buf, n);
+
+                if(meta->bytesleft == 0 && !(meta->flags & CURLWS_CONT)) {
+                    // full message assembled
+                    if(meta->flags & CURLWS_TEXT) {
+                        std::string cont((const char*)msg.data, msg.len);
 #ifndef NDEBUG
-            Log::trace("HTTPClientWebSocket", "websocket connection closed");
+                        Log::trace("HttpClientWebSocket", "Got message: %s", cont.c_str());
 #endif
+                        FakeJni::LocalFrame frame(*(FakeJni::Jvm*)jvm);
+                        auto method = getClass().getMethod("(Ljava/lang/String;)V", "onMessage");
+                        method->invoke(frame.getJniEnv(), this, frame.getJniEnv().createLocalReference(std::make_shared<FakeJni::JString>(cont)));
+                    } else if(meta->flags & CURLWS_BINARY) {
+#ifndef NDEBUG
+                        Log::trace("HttpClientWebSocket", "Got binary message");
+#endif
+                        FakeJni::LocalFrame frame(*(FakeJni::Jvm*)jvm);
+                        auto method = getClass().getMethod("(Ljava/nio/ByteBuffer;)V", "onBinaryMessage");
+                        method->invoke(frame.getJniEnv(), this, frame.getJniEnv().createLocalReference(std::make_shared<jnivm::ByteBuffer>(msg.data, msg.len)));
+                    }
+                    msg.len = 0;  // reuse buffer
+                }
+            }
+
+            if(msg.data) {
+                free(msg.data);
+                msg.data = nullptr;
+                msg.len = 0;
+                msg.cap = 0;
+            }
             sendClosed();
         } else {
             Log::error("HTTPClientWebSocket", "websocket connection closed with an error");
@@ -72,7 +165,9 @@ FakeJni::JBoolean HttpClientWebSocket::sendMessage(std::shared_ptr<FakeJni::JStr
         return false;
     }
     size_t sent = 0;
+    curlMu.lock();
     curl_ws_send(curl, msg->asStdString().c_str(), msg->asStdString().length(), &sent, 0, CURLWS_TEXT);
+    curlMu.unlock();
 #endif
     return true;
 }
@@ -86,7 +181,9 @@ FakeJni::JBoolean HttpClientWebSocket::sendBinaryMessage(std::shared_ptr<jnivm::
         return false;
     }
     size_t sent = 0;
+    curlMu.lock();
     curl_ws_send(curl, msg->buffer, msg->capacity, &sent, 0, CURLWS_BINARY);
+    curlMu.unlock();
 #endif
     return true;
 }
@@ -98,49 +195,22 @@ void HttpClientWebSocket::disconnect(int id) {
 #ifdef ENABLE_WEBSOCKETS
     connected = false;
     size_t sent;
+    curlMu.lock();
     curl_ws_send(curl, "", 0, &sent, 0, CURLWS_CLOSE);
+    curlMu.unlock();
 #endif
-}
-
-size_t HttpClientWebSocket::write_callback(char *ptr, size_t size, size_t nmemb) {
-#ifdef ENABLE_WEBSOCKETS
-    if(!connected) {
-        sendOpened();
-    }
-    auto frame = curl_ws_meta(curl);
-    if(frame->flags & CURLWS_TEXT) {
-        std::string cont((const char*)ptr, nmemb);
-#ifndef NDEBUG
-        Log::trace("HttpClientWebSocket", "Got message: %s", cont.c_str());
-#endif
-        FakeJni::LocalFrame frame(*(FakeJni::Jvm*)jvm);
-        auto method = getClass().getMethod("(Ljava/lang/String;)V", "onMessage");
-        method->invoke(frame.getJniEnv(), this, frame.getJniEnv().createLocalReference(std::make_shared<FakeJni::JString>(cont)));
-    } else if(frame->flags & CURLWS_BINARY) {
-#ifndef NDEBUG
-        Log::trace("HttpClientWebSocket", "Got binary message");
-#endif
-        FakeJni::LocalFrame frame(*(FakeJni::Jvm*)jvm);
-        auto method = getClass().getMethod("(Ljava/nio/ByteBuffer;)V", "onBinaryMessage");
-        method->invoke(frame.getJniEnv(), this, frame.getJniEnv().createLocalReference(std::make_shared<jnivm::ByteBuffer>(ptr, nmemb)));
-    }
-#endif
-    return nmemb;
-}
-
-
-size_t HttpClientWebSocket::writecb(char *buffer, size_t size, size_t nitems, void *userdata) {
-    return ((HttpClientWebSocket*)userdata)->write_callback(buffer, size, nitems);
 }
 
 void HttpClientWebSocket::sendOpened() {
+    if(!connected) {
 #ifndef NDEBUG
-    Log::trace("HttpClientWebSocket", "Sending onOpen");
+        Log::trace("HttpClientWebSocket", "Sending onOpen");
 #endif
-    FakeJni::LocalFrame frame(*(FakeJni::Jvm*)jvm);
-    auto method = getClass().getMethod("()V", "onOpen");
-    method->invoke(frame.getJniEnv(), this);
-    connected = true;
+        FakeJni::LocalFrame frame(*(FakeJni::Jvm*)jvm);
+        auto method = getClass().getMethod("()V", "onOpen");
+        method->invoke(frame.getJniEnv(), this);
+        connected = true;
+    }
 }
 
 void HttpClientWebSocket::sendClosed() {

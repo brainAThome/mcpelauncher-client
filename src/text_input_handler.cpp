@@ -30,6 +30,7 @@ void TextInputHandler::update(std::string text) {
     currentTextPosition = currentText.size();
     currentTextPositionUTF = UTF8Util::getLength(currentText.c_str(), currentTextPosition);
     currentTextCopyPosition = currentTextPosition;
+    currentTextCopyPositionUTF = currentTextPositionUTF;
 }
 
 void TextInputHandler::disable() {
@@ -38,11 +39,12 @@ void TextInputHandler::disable() {
         currentTextPosition = 0;
         currentTextPositionUTF = 0;
         currentTextCopyPosition = 0;
+        currentTextCopyPositionUTF = 0;
         enabled = false;
     }
 }
 
-void TextInputHandler::onTextInput(std::string const &text) {
+void TextInputHandler::onTextInput(std::string const& text) {
     if(!enabled) {
         textUpdateCallback(text);
         return;
@@ -88,16 +90,25 @@ void TextInputHandler::onTextInput(std::string const &text) {
     }
     textUpdateCallback(currentText);
     currentTextCopyPosition = currentTextPosition;
+    currentTextCopyPositionUTF = currentTextPositionUTF;
     caretPositionCallback(getCursorPosition());
 }
 
 void TextInputHandler::onKeyPressed(KeyCode key, KeyAction action, int mods) {
-    bool shiftPressed = mods & KEY_MOD_SHIFT;
+    shiftPressed = mods & KEY_MOD_SHIFT;
     altPressed = mods & KEY_MOD_ALT;
 
     if(action != KeyAction::PRESS && action != KeyAction::REPEAT)
         return;
     if(key == KeyCode::RIGHT) {
+        if(!shiftPressed && currentTextPosition != currentTextCopyPosition) {
+            currentTextPosition = std::max(currentTextPosition, currentTextCopyPosition);
+            currentTextPositionUTF = UTF8Util::getLength(currentText.c_str(), currentTextPosition);
+            currentTextCopyPosition = currentTextPosition;
+            currentTextCopyPositionUTF = currentTextPositionUTF;
+            caretPositionCallback(getCursorPosition());
+            return;
+        }
         if(currentTextPosition >= currentText.size())
             return;
         if(altPressed) {
@@ -124,6 +135,14 @@ void TextInputHandler::onKeyPressed(KeyCode key, KeyAction action, int mods) {
             currentTextPositionUTF++;
         }
     } else if(key == KeyCode::LEFT) {
+        if(!shiftPressed && currentTextPosition != currentTextCopyPosition) {
+            currentTextPosition = std::min(currentTextPosition, currentTextCopyPosition);
+            currentTextPositionUTF = UTF8Util::getLength(currentText.c_str(), currentTextPosition);
+            currentTextCopyPosition = currentTextPosition;
+            currentTextCopyPositionUTF = currentTextPositionUTF;
+            caretPositionCallback(getCursorPosition());
+            return;
+        }
         if(currentTextPosition <= 0)
             return;
         if(altPressed) {
@@ -157,9 +176,11 @@ void TextInputHandler::onKeyPressed(KeyCode key, KeyAction action, int mods) {
     } else {
         return;
     }
-    caretPositionCallback(getCursorPosition());
-    if(!shiftPressed)
+    if(!shiftPressed) {
         currentTextCopyPosition = currentTextPosition;
+        currentTextCopyPositionUTF = currentTextPositionUTF;
+    }
+    caretPositionCallback(getCursorPosition());
 }
 
 std::string TextInputHandler::getCopyText() const {
@@ -179,6 +200,10 @@ void TextInputHandler::setCursorPosition(int pos) {
     } else {
         currentTextPositionUTF = pos;
         currentTextPosition = UTF8Util::getBytePosFromUTF(currentText.c_str(), currentText.size(), pos);
+    }
+    if(!shiftPressed) {
+        currentTextCopyPosition = currentTextPosition;
+        currentTextCopyPositionUTF = currentTextPositionUTF;
     }
     caretPositionCallback(getCursorPosition());
 }

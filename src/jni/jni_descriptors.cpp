@@ -377,3 +377,6 @@ END_NATIVE_DESCRIPTOR
 
 BEGIN_NATIVE_DESCRIPTOR(AndroidJniHelperMultiplayer){Function<&AndroidJniHelperMultiplayer::createUUID>{}, "createUUID"},
     END_NATIVE_DESCRIPTOR
+
+BEGIN_NATIVE_DESCRIPTOR(EventTracerHelperMultiplayer){Function<&EventTracerHelperMultiplayer::getPlayFabEventCommonFields>{}, "getPlayFabEventCommonFields"},
+    END_NATIVE_DESCRIPTOR
