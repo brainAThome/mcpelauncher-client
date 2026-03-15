@@ -694,6 +694,12 @@ On real Android, AAudio is a native C API that directly accesses the audio HAL. 
 
 ---
 
+## Development
+
+This patch set was developed using **AI-assisted programming** ("vibecoding") with **Claude Opus 4.6** (Anthropic) via GitHub Copilot in VS Code. The AI performed root cause analysis, implemented the fixes, and authored the documentation. All changes were practically tested and verified in-game by [brainAThome](https://github.com/brainAThome).
+
+---
+
 ## License
 
 These patches are distributed under the same license as [mcpelauncher-client](https://github.com/minecraft-linux/mcpelauncher-client) (GPLv3).
