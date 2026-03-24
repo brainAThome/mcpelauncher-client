@@ -98,6 +98,10 @@ std::string normalizePath(const std::string& path) {
     return path;
 }
 
+#ifdef __APPLE__
+extern "C" __attribute__((weak)) const char * elg_lib = "";
+#endif
+
 int main(int argc, char* argv[]) {
     if(argc == 2 && argv[1][0] != '-') {
         Log::info("Sendfile", "sending file");
@@ -220,6 +224,23 @@ int main(int argc, char* argv[]) {
         MinecraftVersion::init(apkInfo.package, apkInfo.versionCode);
     }
     Log::info("Launcher", "Game version: %s", MinecraftVersion::getString().c_str());
+
+#ifdef __APPLE__
+    if(MinecraftVersion::isAtLeast(1, 26, 10, 0)) {
+        std::string appdir = PathHelper::getAppDir();
+        std::string libEGL = appdir + "/../Frameworks/mvk-angle/libEGL.dylib";
+        std::string MoltenVK_icd = appdir + "/../Frameworks/mvk-angle/MoltenVK_icd.json";
+        if(FileUtil::exists(libEGL) && FileUtil::exists(MoltenVK_icd)) {
+            // Memory leak, but should be ok as onetime allocation
+            elg_lib = strdup(libEGL.data());
+            setenv("ANGLE_DEFAULT_PLATFORM", "vulkan", true);
+            setenv("VK_ICD_FILENAMES", MoltenVK_icd.data(), true);
+        } else {
+            Log::error("Launcher", "Failed to find one of '%s' and '%s'", libEGL.data(), MoltenVK_icd.data());
+            Log::error("Launcher", "Expect seeing a black screen, you have been warned");
+        }
+    }
+#endif
 
     loadGameOptions();
 #if defined(__i386__) || defined(__x86_64__)
