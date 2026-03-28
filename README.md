@@ -26,6 +26,11 @@
   - [The AAudio Bridge Architecture](#23-the-aaudio-bridge-architecture)
   - [Implementation Details](#24-implementation-details)
   - [Audio Pipeline Diagram](#25-audio-pipeline-diagram)
+- [Fix 3: Launcher UI "Outdated Version" Warning](#fix-3-launcher-ui-outdated-version-warning)
+  - [Symptoms](#31-symptoms)
+  - [Root Cause Analysis](#32-root-cause-analysis)
+  - [Update Check Architecture](#33-update-check-architecture)
+  - [The Fix](#34-the-fix)
 - [Files Changed](#files-changed)
 - [Building from Source](#building-from-source)
 - [Applying the Patches](#applying-the-patches)
@@ -451,6 +456,75 @@ aaudio_format_t format = AAUDIO_FORMAT_UNSPECIFIED; // unspecified = use default
 │                                                                     │
 │ 9. Audio playback active via SDL3 → PipeWire → hardware             │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Fix 3: Launcher UI "Outdated Version" Warning
+
+### 3.1 Symptoms
+
+- Launcher shows a **changelog/update screen** on every startup
+- Banner displays: *"Welcome to the new Minecraft Linux Launcher Update"*
+- The screen reappears after every launch, even though the package is up to date
+- Installed package: `mcpelauncher-ui-manifest 1.7.1.23570272227.1~noble` (latest available)
+
+### 3.2 Root Cause Analysis
+
+The launcher UI (`mcpelauncher-ui-qt`) stores a `lastVersion` value in its QSettings config file at:
+
+```
+~/.config/Minecraft Linux Launcher/Minecraft Linux Launcher UI.conf
+```
+
+On startup, the QML code in `main.qml` checks:
+
+```qml
+if (LAUNCHER_CHANGE_LOG.length !== 0 && launcherSettings.lastVersion < LAUNCHER_VERSION_CODE) {
+    stackView.push(panelChangelog)
+}
+```
+
+After upgrading from **1.6.5** → **1.7.1** via APT, the config retained the old build ID:
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| `lastVersion` (config) | `22323579789` | Old package `1.6.5.22323579789.1~noble` |
+| `LAUNCHER_VERSION_CODE` (binary) | `23570272227` | Current package `1.7.1.23570272227.1~noble` |
+
+Since `22323579789 < 23570272227`, the changelog screen appeared on **every** launch. The changelog screen only updates `lastVersion` when the user clicks through its "Continue" button — closing the window instead leaves the stale value.
+
+### 3.3 Update Check Architecture
+
+The launcher has **three** independent update mechanisms:
+
+| Mechanism | Purpose | Trigger |
+|-----------|---------|--------|
+| `UpdateChecker` (C++) | Launcher binary self-update | `UPDATE_CHECK` compile flag (disabled in deb builds) |
+| `UpdateManager` (C++) | DRM/mod updates for newer game versions | Mod database download |
+| Changelog Screen (QML) | Show what's new after upgrade | `lastVersion < LAUNCHER_VERSION_CODE` |
+
+For deb package builds, `UpdateChecker` is compiled **without** `UPDATE_CHECK` defined, so it emits:
+> *"Launcher cannot be updated — check your package manager"*
+
+This error is silently dropped (the QML handler is disabled by default). The relevant update path for deb users is the **Changelog Screen**.
+
+### 3.4 The Fix
+
+Update `lastVersion` in the config file to match the current `LAUNCHER_VERSION_CODE`:
+
+```bash
+sed -i 's/^lastVersion=22323579789$/lastVersion=23570272227/' \
+  "$HOME/.config/Minecraft Linux Launcher/Minecraft Linux Launcher UI.conf"
+```
+
+This tells the launcher that the user has already seen the 1.7.1 changelog, preventing the screen from reappearing.
+
+**Verification:**
+```bash
+# Confirm the fix
+grep lastVersion "$HOME/.config/Minecraft Linux Launcher/Minecraft Linux Launcher UI.conf"
+# Expected: lastVersion=23570272227
 ```
 
 ---
