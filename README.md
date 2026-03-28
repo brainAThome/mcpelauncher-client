@@ -26,7 +26,7 @@
   - [The AAudio Bridge Architecture](#23-the-aaudio-bridge-architecture)
   - [Implementation Details](#24-implementation-details)
   - [Audio Pipeline Diagram](#25-audio-pipeline-diagram)
-- [Fix 3: Launcher UI "Outdated Version" Warning](#fix-3-launcher-ui-outdated-version-warning)
+- [Fix 3: Launcher UI "Outdated Version" Warnings](#fix-3-launcher-ui-outdated-version-warnings)
   - [Symptoms](#31-symptoms)
   - [Root Cause Analysis](#32-root-cause-analysis)
   - [Update Check Architecture](#33-update-check-architecture)
@@ -460,24 +460,28 @@ aaudio_format_t format = AAUDIO_FORMAT_UNSPECIFIED; // unspecified = use default
 
 ---
 
-## Fix 3: Launcher UI "Outdated Version" Warning
+## Fix 3: Launcher UI "Outdated Version" Warnings
+
+Two separate issues cause "outdated version" warnings in the launcher UI after upgrading via APT.
 
 ### 3.1 Symptoms
 
-- Launcher shows a **changelog/update screen** on every startup
-- Banner displays: *"Welcome to the new Minecraft Linux Launcher Update"*
-- The screen reappears after every launch, even though the package is up to date
-- Installed package: `mcpelauncher-ui-manifest 1.7.1.23570272227.1~noble` (latest available)
+1. **Changelog screen** on every startup: *"Welcome to the new Minecraft Linux Launcher Update"*
+2. **"Spielversion veraltet" / "Compatibility unknown" banner** on the HomeScreen: *"Compatibility for latest Minecraft version 1.26.3.1 is unknown"*
+
+Both appear even though the launcher package is up to date (`mcpelauncher-ui-manifest 1.7.1.23570272227.1~noble`).
 
 ### 3.2 Root Cause Analysis
 
-The launcher UI (`mcpelauncher-ui-qt`) stores a `lastVersion` value in its QSettings config file at:
+#### Issue A: Stale `lastVersion` after APT upgrade
+
+The launcher stores a `lastVersion` value in QSettings:
 
 ```
 ~/.config/Minecraft Linux Launcher/Minecraft Linux Launcher UI.conf
 ```
 
-On startup, the QML code in `main.qml` checks:
+On startup, `main.qml` checks:
 
 ```qml
 if (LAUNCHER_CHANGE_LOG.length !== 0 && launcherSettings.lastVersion < LAUNCHER_VERSION_CODE) {
@@ -492,7 +496,40 @@ After upgrading from **1.6.5** → **1.7.1** via APT, the config retained the ol
 | `lastVersion` (config) | `22323579789` | Old package `1.6.5.22323579789.1~noble` |
 | `LAUNCHER_VERSION_CODE` (binary) | `23570272227` | Current package `1.7.1.23570272227.1~noble` |
 
-Since `22323579789 < 23570272227`, the changelog screen appeared on **every** launch. The changelog screen only updates `lastVersion` when the user clicks through its "Continue" button — closing the window instead leaves the stale value.
+Since `22323579789 < 23570272227`, the changelog screen appeared on **every** launch.
+
+#### Issue B: Wrong Versions-DB branch (`v1.5.x` instead of `master`)
+
+The deb package is compiled with `LAUNCHER_DISABLE_DEV_MODE=ON`. This hardcodes `LauncherSettings::disableDevMode = 1`, which causes:
+
+1. `showBetaVersions()` always returns `false`
+2. `showUnverified()` always returns `false` (ignoring the user's `showUnverified=true` setting)
+3. `versionsFeedBaseUrl()` always returns `""` (empty)
+
+When `versionsFeedBaseUrl` is empty **and** `showUnverified` is false, the launcher falls back to:
+```
+https://raw.githubusercontent.com/minecraft-linux/mcpelauncher-versiondb/v1.5.x/
+```
+
+This `v1.5.x` branch only contains version entries up to **Minecraft 1.21.x** (1850 entries). When Google Play reports the installed game as **1.26.3.1**, the launcher cannot find it in the version database and shows:
+
+> *"Compatibility for latest Minecraft version 1.26.3.1 is unknown. Support for new version is a feature request."*
+
+With `showUnverified=true` actually respected, the URL switches to:
+```
+https://raw.githubusercontent.com/minecraft-linux/mcpelauncher-versiondb/master/
+```
+
+This `master` branch contains **2002+ entries** including all 1.26.x versions, resolving the warning.
+
+**Verbose output comparison:**
+
+| | Without `-d` flag | With `-d` flag |
+|---|---|---|
+| Versions-DB branch | `v1.5.x` (1850 entries) | `master` (2002 entries) |
+| Latest known version | 1.21.114.1 | **1.26.10.4** |
+| Version check path | `Use compat version` (fallback) | `Use play version` ✓ |
+| Compatibility warning | Yes | **None** |
 
 ### 3.3 Update Check Architecture
 
@@ -507,24 +544,52 @@ The launcher has **three** independent update mechanisms:
 For deb package builds, `UpdateChecker` is compiled **without** `UPDATE_CHECK` defined, so it emits:
 > *"Launcher cannot be updated — check your package manager"*
 
-This error is silently dropped (the QML handler is disabled by default). The relevant update path for deb users is the **Changelog Screen**.
+This error is silently dropped (the QML handler is disabled by default).
 
 ### 3.4 The Fix
 
-Update `lastVersion` in the config file to match the current `LAUNCHER_VERSION_CODE`:
+**Part 1:** Update `lastVersion` to match the current `LAUNCHER_VERSION_CODE`:
 
 ```bash
 sed -i 's/^lastVersion=22323579789$/lastVersion=23570272227/' \
   "$HOME/.config/Minecraft Linux Launcher/Minecraft Linux Launcher UI.conf"
 ```
 
-This tells the launcher that the user has already seen the 1.7.1 changelog, preventing the screen from reappearing.
+**Part 2:** Create a local desktop entry override that enables devmode (`-d` flag):
+
+```bash
+mkdir -p ~/.local/share/applications
+
+cat > ~/.local/share/applications/mcpelauncher-ui-qt.desktop << 'EOF'
+[Desktop Entry]
+Name=Minecraft Bedrock Launcher
+Comment=A Minecraft: Bedrock Edition (earlier: Pocket Edition launcher)
+Exec=mcpelauncher-ui-qt -d %U
+Icon=mcpelauncher-ui-qt
+MimeType=application/zip
+Type=Application
+Categories=Game;
+Terminal=false
+EOF
+
+update-desktop-database ~/.local/share/applications/ 2>/dev/null
+```
+
+The `-d` flag disables `LAUNCHER_DISABLE_DEV_MODE`, allowing `showUnverified=true` from the config to take effect. This switches the versions database from `v1.5.x` to `master`, which knows about Minecraft 1.26.x versions.
 
 **Verification:**
 ```bash
-# Confirm the fix
+# Part 1: Changelog fix
 grep lastVersion "$HOME/.config/Minecraft Linux Launcher/Minecraft Linux Launcher UI.conf"
 # Expected: lastVersion=23570272227
+
+# Part 2: Devmode desktop entry
+grep "Exec=" ~/.local/share/applications/mcpelauncher-ui-qt.desktop
+# Expected: Exec=mcpelauncher-ui-qt -d %U
+
+# Part 3: Launch and check versions-db branch
+mcpelauncher-ui-qt -d -v 2>&1 | grep "Downloading Versionsdb"
+# Expected: URLs containing /master/ (not /v1.5.x/)
 ```
 
 ---
